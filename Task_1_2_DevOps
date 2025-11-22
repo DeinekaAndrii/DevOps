@@ -1,0 +1,60 @@
+TASK 1
+
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <source_directory> <destination_directory>"
+    exit 1
+fi
+
+SOURCE=$1
+DESTINATION=$2
+
+rsync -av --exclude="*.log" --delete "$SOURCE" "$DESTINATION"
+
+# End
+
+TASK 2
+
+#!/bin/bash
+
+LOGFILE="/my_files/backup.log"
+echo "$(date '+%Y-%m-%d %H:%M:%S') --- Backup started" >> "$LOGFILE"
+
+# Check arguments
+if [ $# -ne 3 ]; then
+    echo "Usage: $0 <source> <destination> <size_limit_MB>" | tee -a "$LOGFILE"
+    exit 1
+fi
+
+SOURCE=$1
+DESTINATION=$2
+SIZE_LIMIT=$3
+
+# Extract user/host and remote path from DESTINATION
+REMOTE_USER=$(echo "$DESTINATION" | cut -d@ -f1)
+REMOTE_HOST=$(echo "$DESTINATION" | cut -d@ -f2 | cut -d: -f1)
+REMOTE_PATH=$(echo "$DESTINATION" | cut -d: -f2)
+
+# Find oversized folders on the remote machine
+OVERSIZED=$(ssh ${REMOTE_USER}@${REMOTE_HOST} "find $REMOTE_PATH -type d -exec du -sm {} + | awk '\$1 > $SIZE_LIMIT {print \$2}'")
+
+# Build exclude list
+EXCLUDES="--exclude='*.log' --exclude='.*' --exclude='target' --exclude='logs'"
+
+# Add oversized folders to exclude list
+for folder in $OVERSIZED; do
+    EXCLUDES="$EXCLUDES --exclude='$folder'"
+done
+
+# Build rsync command dynamically
+RSYNC_CMD="rsync -av $EXCLUDES --delete \"$SOURCE\" \"$DESTINATION\""
+
+# Run rsync via eval
+eval $RSYNC_CMD 2>> "$LOGFILE"
+
+if [ $? -eq 0 ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') --- Backup completed successfully" >> "$LOGFILE"
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') --- Backup FAILED" >> "$LOGFILE"
+fi
